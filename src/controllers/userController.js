@@ -4,6 +4,8 @@ const bcrypt = require("bcryptjs")
 const aws = require("aws-sdk");
 const mongoose = require("mongoose")
 
+
+
 const isValid = function (value) {
     if (typeof value === 'undefined' || value === null) return false
     if (typeof value === 'string' && value.trim().length === 0) return false
@@ -20,7 +22,9 @@ function telephoneCheck(str) {
     }
     return false
 }
-
+const validObject = function (value) {
+    return mongoose.Types.ObjectId.isValid(value)
+}
 //POST /register
 const registerUser = async function (req, res) {
     try {
@@ -227,134 +231,140 @@ const GetUsers = async function (req, res) {
 
 const UpdateUser = async function (req, res) {
     try {
-
-        if (req.user.userId != req.params.userId) {
-            return res.status(401).send({ status: false, msg: "userId does not match" })
+        const requestBody = JSON.parse(req.body.data)
+        userId = req.params.userId
+        if (!validObject(userId)) {
+            res.status(400).send({ status: false, message: `${userId} is invalid` })
+            return
         }
-        let userId = req.params.userId
-        if (!isValidrequestBody(JSON.parse(req.body.data))) {
-            return res.status(400).send({ status: false, msg: "there is nothing to update" })
+        const userFound = await UserModel.findOne({ _id: userId})
+        if (!userFound) {
+            return res.status(404).send({ status: false, message: `User do not exists` })
         }
-        const { fname, lname, email, password, phone, address } = JSON.parse(req.body.data)
-
-        if (password) {
-            if (!isValid(password)) {
-                res.status(400).send({ status: false, msg: "password string is missing" })
+        //Authorisation
+        if(userId.toString()!== req.user.userId) {
+            res.status(401).send({status: false, message: `Unauthorized access! Owner info doesn't match`});
+            return
+        }
+        if (!isValidrequestBody(requestBody)) {
+            res.status(400).send({ status: false, message: 'Please provide details to update' })
+            return
+        }
+        // destructuring the body
+        let { fname, lname, email, phone, password, address} = requestBody;
+        let updateUserData = {}
+        if(isValid(fname)){
+            updateUserData['fname'] = fname
+        }
+        if(isValid(lname)){
+            updateUserData['lname'] = lname
+        }
+        if(isValid(email)){
+            if (!(/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(email.trim()))) {
+                res.status(400).send({ status: false, message: `Email should be a valid email address` })
             }
-            var epass = await bcrypt.hash(password, 10)
-        }
-        if (fname) {
-            if (!isValid(fname)) {
-                return res.status(400).send({ status: false, msg: "provide a fname to update" })
+            const duplicateEmail = await UserModel.find({email: email}) 
+            if(duplicateEmail.length){
+                res.status(400).send({status: false, message: 'email already exists'})
             }
+          updateUserData['email'] = email
         }
-        if (email) {
-            if (!isValid(email)) {
-                return res.status(400).send({ status: false, msg: "provide a email to update" })
+        if(isValid(phone)){
+            if (!(/^(1\s|1|)?((\(\d{3}\))|\d{3})(\-|\s)?(\d{3})(\-|\s)?(\d{4})$/.test(phone.trim()))) {
+                res.status(400).send({ status: false, message: `Please provide valid phone number` })
             }
-
-
+            const duplicatePhone = await UserModel.find({phone: phone}) 
+            if(duplicatePhone.length){
+                res.status(400).send({status: false, message: 'phone already exists'})
+            }
+          updateUserData['phone']=phone
         }
-        if (lname) {
-            if (!isValid(lname)) {
-                return res.status(400).send({ status: false, msg: "provide the lname that you want to update" })
-            }
-        }
-        if (phone) {
-            if (!telephoneCheck(phone)) {
-                return res.status(400).send({ status: false, msg: "Enter a valid phone number that you want to update" })
-            }
+        if(isValid(password)){
+          const encrypt = await bcrypt.hash(password, 10)
+          updateUserData['password']=encrypt
         }
         if (address) {
-            if (!isValidrequestBody(address)) {
-                res.status(400).send({ status: false, msg: "provide valid address you want to update" })
-            }
-
-
-            if (address.shipping) {
-                if (!isValid(address.shipping.street && address.shipping.city && address.shipping.pincode)) {
-                    res.status(400).send({ status: false, msg: "provide the shipping address that you want to update" })
+          if (address.shipping) {
+              if (address.shipping.street) {
+                  if (!isValid(address.shipping.street)) {
+                      return res.status(400).send({ status: false, message: 'Please provide street to update' })
+                  }
+                  updateUserData['address.shipping.street'] = address.shipping.street
+              }
+              if (address.shipping.city) {
+                  if (!isValid(address.shipping.city)) {
+                      return res.status(400).send({ status: false, message: 'Please provide city name to update' })
+                  }
+                  updateUserData['address.shipping.city'] = address.shipping.city
+              }
+              if (address.shipping.pincode) {
+                  if (typeof address.shipping.pincode !== 'number'){
+                      return res.status(400).send({ status: false, message: 'Please provide pincode to update' })
+                  }
+                  updateUserData['address.shipping.pincode'] = address.shipping.pincode
+              }
+          }
+          if (address.billing) {
+            if (address.billing.street) {
+                if (!isValid(address.billing.street)) {
+                    return res.status(400).send({ status: false, message: 'Please provide street to update' })
                 }
+                updateUserData['address.billing.street'] = address.billing.street
             }
-            if (address.billing) {
-                if (!isValid(address.billing.street && address.billing.city && address.billing.pincode)) {
-                    res.status(400).send({ status: false, msg: "provide the billing address that you want to update" })
+            if (address.billing.city) {
+                if (!isValid(address.billing.city)) {
+                    return res.status(400).send({ status: false, message: 'Please provide city to update' })
                 }
+                updateUserData['address.billing.city'] = address.billing.city
             }
-
+            if (address.billing.pincode) {
+                if (typeof address.billing.pincode !== 'number') {
+                    return res.status(400).send({ status: false, message: 'Please provide pincode to update' })
+                }
+                updateUserData['address.billing.pincode'] = address.billing.pincode
+            }
         }
-
-
-        // const isNumberorEmailAlreadyUsed = await UserModel.findOne({ phone: phone }, { email: email });
-        // if (isNumberorEmailAlreadyUsed) {
-        //     res.status(400).send({ status: false, message: `${phone} number or ${email} mail is already registered` })
-        //     return
-        // }
-
-        aws.config.update({
-            accessKeyId: "AKIAY3L35MCRRMC6253G",  // id
-            secretAccessKey: "88NOFLHQrap/1G2LqUy9YkFbFRe/GNERsCyKvTZA",  // like your secret password
-            region: "ap-south-1" // Mumbai region
-        });
-
-
-        // this function uploads file to AWS and gives back the url for the file
-        let uploadFile = async (file) => {
-            return new Promise(function (resolve, reject) { // exactly 
-
-                // Create S3 service object
-                let s3 = new aws.S3({ apiVersion: "2006-03-01" });
-                var uploadParams = {
-                    ACL: "public-read", // this file is publically readable
-                    Bucket: "classroom-training-bucket", // HERE
-                    Key: "pk_newFolder/profileimages" + file.originalname, // HERE    "pk_newFolder/harry-potter.png" pk_newFolder/harry-potter.png
-                    Body: file.buffer,
-                };
-
-                // Callback - function provided as the second parameter ( most oftenly)
-                s3.upload(uploadParams, function (err, data) {
-                    if (err) {
-                        return reject({ "error": err });
-                    }
-                    console.log(data)
-                    console.log(`File uploaded successfully. ${data.Location}`);
-                    return resolve(data.Location); //HERE 
-                });
+    } 
+    aws.config.update({
+        accessKeyId: "AKIAY3L35MCRRMC6253G",  // id
+        secretAccessKey: "88NOFLHQrap/1G2LqUy9YkFbFRe/GNERsCyKvTZA",  // like your secret password
+        region: "ap-south-1" // Mumbai region
+    });
+    // this function uploads file to AWS and gives back the url for the file
+    let uploadFile = async (file) => {
+        return new Promise(function (resolve, reject) { // exactly 
+            // Create S3 service object
+            let s3 = new aws.S3({ apiVersion: "2006-03-01" });
+            var uploadParams = {
+                ACL: "public-read", // this file is publically readable
+                Bucket: "classroom-training-bucket", // HERE
+                Key: "pk_newFolder/profileimages" + file.originalname, // HERE    "pk_newFolder/harry-potter.png" pk_newFolder/harry-potter.png
+                Body: file.buffer,
+            };
+            // Callback - function provided as the second parameter ( most oftenly)
+            s3.upload(uploadParams, function (err, data) {
+                if (err) {
+                    return reject({ "error": err });
+                }
+                console.log(data)
+                console.log(`File uploaded successfully. ${data.Location}`);
+                return resolve(data.Location); //HERE 
             });
-        };
-
-        let files = req.files;
-        //  if(!files){
-
-        //     let UpdateUserDetails = await UserModel.findOneAndUpdate({_id: userId}, {fname: fname, 
-        //         lname: lname,email: email,profileImage: profileImage,
-        //          password: encryppass,phone: phone, address: address}, {new: true})
-        //     res.status(200).send({status: true, msg: "User profile updated", data: UpdateUserDetails})
-        //  }
-
-        if (files && files.length > 0) {
-            //upload to s3 and return true..incase of error in uploading this will goto catch block( as rejected promise)
-            let uploadedFileURL = await uploadFile(files[0]); // expect this function to take file as input and give url of uploaded file as output 
-            //   res.status(201).send({ status: true, data: uploadedFileURL });
-            //    const EncrypPassword = await bcrypt.hash(password, 10)
-            // console.log(EncrypPassword)
-            var profileImage = uploadedFileURL
-            //    const userData = { fname, lname, email,phone,profileImage, password: EncrypPassword, address }
-            //    let saveduser = await UserModel.create(userData)
-            //    res.status(201).send({ status: true, message: 'user created succesfully', data: saveduser })
-        }
-
-
-        let UpdateUserDetails = await UserModel.findOneAndUpdate({ _id: userId }, {
-            fname: fname,
-            lname: lname, email: email, profileImage: profileImage,
-            password: epass, phone: phone, address: address
-        }, { new: true })
-        res.status(200).send({ status: true, msg: "User profile updated", data: UpdateUserDetails })
-    } catch (err) {
-        res.status(500).send({ status: false, msg: err.message })
+        });
+    };
+    let files = req.files;
+    if (files && files.length > 0) {
+       let uploadedFileURL = await uploadFile(files[0]);
+       if(uploadedFileURL){
+        updateUserData['profileImage']=uploadedFileURL
     }
 }
+const updatedUserData = await UserModel.findOneAndUpdate({ _id: userId },updateUserData,{new:true})
+res.status(201).send({ status: true, data: updatedUserData })
+    } catch (error) {
+        res.status(500).send({ status: false, msg: error.message });
+    }
+  }
 
 
 module.exports.registerUser = registerUser

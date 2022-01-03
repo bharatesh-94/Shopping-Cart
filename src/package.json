@@ -4,7 +4,7 @@
   "description": "book menagement project",
   "main": "index.js",
   "scripts": {
-    "watch": "nodemon",
+    "watch": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -21,6 +21,7 @@
     "aws-sdk": "^2.1048.0",
     "bcryptjs": "^2.4.3",
     "body": "^5.1.0",
+    "body-parser": "^1.19.1",
     "express": "^4.17.2",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^6.1.3",
